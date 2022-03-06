@@ -17,26 +17,27 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 # declare workspace
-inputWS = r"\\kleinschmidtusa.com\Condor\Jobs\012\218\Calcs\Taftsville_Impoundment_Python\Taftsville Bathymetry\Python\Data"
-outputWS = r"\\kleinschmidtusa.com\Condor\Jobs\012\218\Calcs\Taftsville_Impoundment_Python\Taftsville Bathymetry\Python\Output"
-dam_crest_elev = 884.13
-bank_angle = 89
+inputWS = r"C:\Users\knebiolo\Desktop\LandR\Langdale_Bahtymetry\Python\riverview\generate_cross_section\Data"
+outputWS = r"C:\Users\knebiolo\Desktop\LandR\Langdale_Bahtymetry\Python\riverview\generate_cross_section\Output"
+dam_crest_elev = 531.44
+bank_angle = 75.
+thalweg_buffer = 150.
 
 # import data
-centerline = geopandas.read_file(os.path.join(inputWS,'centerline_fix.shp'))
-route = geopandas.read_file(os.path.join(inputWS,'centerline_route.shp'))
-bankline = geopandas.read_file(os.path.join(inputWS,'banklines.shp'))
+centerline = geopandas.read_file(os.path.join(inputWS,'centerline_segmented_sort.shp'))
+route = geopandas.read_file(os.path.join(inputWS,'centerline.shp'))
+bankline = geopandas.read_file(os.path.join(inputWS,'bankline.shp'))
 bankline['z_enabled_geom'] = np.empty(len(bankline), dtype = 'object')
 
 # fix elevations to the Z coordinate
 for i in bankline.iterrows():
     shore = i[1]['geometry']
     z = i[1]['Elevation']
-    
+
     # get list of shoreline geometry - we need to edit in the Z coordinate
     coords = list(shore.coords)
-    
-    # for every shoreline coordinate 
+
+    # for every shoreline coordinate
     idx = 0
     for j in coords:
         # write the elevation to the z coordinate
@@ -44,17 +45,17 @@ for i in bankline.iterrows():
         coord_list[2] = z
         coords[idx] = tuple(coord_list)
         idx = idx + 1
-        
+
     # create new linestring
     line = shapely.geometry.LineString(coords)
-    
-    # overwrite geometry 
+
+    # overwrite geometry
     bankline.loc[i[0],'z_enabled_geom'] = line
-    
+
 bankline = bankline.set_geometry('z_enabled_geom')
 
 # create a piecewise linear function of elevation as a function of river mile
-knots = pd.read_csv(os.path.join(inputWS,'thalweg_elev.csv'))
+knots = pd.read_csv(os.path.join(inputWS,'Riverview_Geotech_LinearRef.csv'))
 elev_f = interp1d(knots.dist_f.values,knots.elev_f.values)
 
 # extract route
@@ -101,9 +102,9 @@ for feature in centerline.iterrows():
     phat_l = rot_l.dot(phat)
     phat_r = rot_r.dot(phat)
 
-    # calculate that point far off into space that is guranteed to intersect a bankline
-    p_l = p0 + 10000 * phat_l
-    p_r = p0 + 10000 * phat_r
+    # calculate that point far off into space in the direction of the cross section that is guranteed to intersect a bankline
+    p_l = p0 + thalweg_buffer * phat_l
+    p_r = p0 + thalweg_buffer * phat_r
 
     # create shapely line strings
     xs_l = shapely.geometry.LineString([p0,p_l])
@@ -117,10 +118,10 @@ for feature in centerline.iterrows():
         if xs_l.intersects(shore):
             # calculate where the intersect, this is now the endpoint
             bank_l = shore.intersection(xs_l)
-            
+
             try:
                 len(bank_l)
-            
+
             except:
                 # calculate length of cross section
                 xl_len = shapely.geometry.Point(p0).distance(bank_l)
@@ -131,7 +132,7 @@ for feature in centerline.iterrows():
 
                 # convert elevation to depth
                 depth = dam_crest_elev - elev
-                
+
                 # how far in from the shore does the bank start to slope up?
                 buff_dist = np.tan(np.radians(bank_angle)) * depth
                 if buff_dist > xl_len:
@@ -150,20 +151,22 @@ for feature in centerline.iterrows():
                 # create a new XS consisting of these 3 points
                 xs_l = shapely.geometry.LineString([p0_xyz,buff_l_arr,list(list(bank_l.coords)[0])])
                 #xs_l = shapely.geometry.LineString([list(list(bank_l.coords)[0]),buff_l_arr, p0_xyz])
-                
+
                 del p0_xyz
 
                 # add cross section to output dataframe
                 xs_l_list.append(xs_l)
 
                 # add cross section to output dataframe
-                bank_l_bob.append(list(bank_l.coords)[0])
-                bank_l_tob.append(buff_l_arr)
+                # bank_l_bob.append(list(bank_l.coords)[0])
+                # bank_l_tob.append(buff_l_arr)
+                bank_l_bob.append(buff_l_arr)
+                bank_l_tob.append(list(bank_l.coords)[0])
 
         if xs_r.intersects(shore):
             # calculate where the intersect, this is now the endpoint
             bank_r = shore.intersection(xs_r)
-            
+
             try:
                 len(bank_r)
             except:
@@ -188,11 +191,11 @@ for feature in centerline.iterrows():
 
                 # now make everything 3d
                 p0_xyz = np.insert(p0,2,elev)
-                
-                # convert to array and insert elevation 
+
+                # convert to array and insert elevation
                 buff_r_arr = np.array(list(buff_r.coords))
                 buff_r_arr = np.insert(buff_r_arr,2,elev)
-                
+
                 # create a new XS consisting of these 3 points
                 xs_r = shapely.geometry.LineString([p0_xyz,buff_r_arr,list(list(bank_r.coords)[0])])
                 #xs_r = shapely.geometry.LineString([list(list(bank_r.coords)[0]),buff_r_arr,p0_xyz])
@@ -214,9 +217,9 @@ for i in np.arange(0,len(xs_l_list)-2):
     next_xs = xs_l_list[i+1]
     if next_xs.intersects(curr_xs):
         rm_list.append(i+1)
-                
+
 xs_l_exp = np.delete(xs_l_exp,rm_list)
-                
+
 xs_r_exp = xs_r_list.copy()
 rm_list = []
 for i in np.arange(1,len(xs_r_list)-1):
@@ -224,10 +227,10 @@ for i in np.arange(1,len(xs_r_list)-1):
     prev_xs = xs_r_list[i-1]
     if curr_xs.intersects(prev_xs):
         rm_list.append(i-1)
-                
+
 xs_r_exp = np.delete(xs_r_exp,rm_list)
-  
-# convert to geo pandas dataframe          
+
+# convert to geo pandas dataframe
 xs_r_gdf = geopandas.GeoDataFrame(xs_r_exp, columns = ['geometry'])
 xs_l_gdf = geopandas.GeoDataFrame(xs_l_exp, columns = ['geometry'])
 
@@ -243,7 +246,7 @@ newRowArr = [1,shapely.geometry.LineString(bank_r_tob)]
 imp_r_buff_gdf = geopandas.GeoDataFrame([newRowArr], columns = ['ID','geometry'])
 
 imp_l_buff_gdf.to_file(os.path.join(outputWS,'top_of_bank_l.shp'))
-imp_r_buff_gdf.to_file(os.path.join(outputWS,'tob_of_bank_r.shp'))
+imp_r_buff_gdf.to_file(os.path.join(outputWS,'top_of_bank_r.shp'))
 
 newRowArr = [1,shapely.geometry.LineString(bank_l_bob)]
 imp_l_buff_gdf = geopandas.GeoDataFrame([newRowArr], columns = ['ID','geometry'])
