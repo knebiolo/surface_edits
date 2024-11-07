@@ -17,14 +17,14 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 # declare workspace
-inputWS = r"C:\Users\knebiolo\Desktop\LandR\Langdale_Bahtymetry\Python\riverview\generate_cross_section\Data"
-outputWS = r"C:\Users\knebiolo\Desktop\LandR\Langdale_Bahtymetry\Python\riverview\generate_cross_section\Output"
-dam_crest_elev = 531.44
-bank_angle = 75.
-thalweg_buffer = 150.
+inputWS = r"J:\534\039\GIS\Langdale_Bahtymetry\Python\langdale_upstream\bathy_v2\Data\Langdale_CrossSection"
+outputWS = r"J:\534\039\GIS\Langdale_Bahtymetry\Python\langdale_upstream\bathy_v2\Output\Langdale_CrossSection"
+dam_crest_elev = 0.
+bank_angle = -75.
+thalweg_buffer = 900.
 
 # import data
-centerline = geopandas.read_file(os.path.join(inputWS,'centerline_segmented_sort.shp'))
+centerline = geopandas.read_file(os.path.join(inputWS,'centerline_segmented.shp'))
 route = geopandas.read_file(os.path.join(inputWS,'centerline.shp'))
 bankline = geopandas.read_file(os.path.join(inputWS,'bankline.shp'))
 bankline['z_enabled_geom'] = np.empty(len(bankline), dtype = 'object')
@@ -32,7 +32,8 @@ bankline['z_enabled_geom'] = np.empty(len(bankline), dtype = 'object')
 # fix elevations to the Z coordinate
 for i in bankline.iterrows():
     shore = i[1]['geometry']
-    z = i[1]['Elevation']
+    #z = i[1]['Elevation']
+    z = dam_crest_elev
 
     # get list of shoreline geometry - we need to edit in the Z coordinate
     coords = list(shore.coords)
@@ -55,8 +56,8 @@ for i in bankline.iterrows():
 bankline = bankline.set_geometry('z_enabled_geom')
 
 # create a piecewise linear function of elevation as a function of river mile
-knots = pd.read_csv(os.path.join(inputWS,'Riverview_Geotech_LinearRef.csv'))
-elev_f = interp1d(knots.dist_f.values,knots.elev_f.values)
+knots = pd.read_csv(os.path.join(inputWS,'ref_dep.csv'))
+elev_f = interp1d(knots.distance.values,knots.depth.values)
 
 # extract route
 route = route.geometry.iloc[0]
@@ -257,6 +258,8 @@ imp_r_buff_gdf = geopandas.GeoDataFrame([newRowArr], columns = ['ID','geometry']
 imp_l_buff_gdf.to_file(os.path.join(outputWS,'bot_of_bank_l.shp'))
 imp_r_buff_gdf.to_file(os.path.join(outputWS,'bot_of_bank_r.shp'))
 
+new_bank = geopandas.GeoDataFrame(bankline, columns = ['z_enabled_geom'])
+new_bank.to_file(os.path.join(outputWS,'new_bankline.shp'))
 
 print ("Script Complete Check Results")
 
